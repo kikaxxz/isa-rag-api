@@ -21,7 +21,7 @@ else:
     initialize_app()
 
 # --- CONFIGURACIÓN DE GEMINI ---
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY", "TU_API_KEY_AQUI"))
+genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 modelo = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- CONFIGURACIÓN DE LA BASE DE DATOS VECTORIAL ---
