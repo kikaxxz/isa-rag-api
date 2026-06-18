@@ -1,0 +1,4 @@
+__pycache__/
+manual_mantenimiento.pdf
+procesar_manual.py
+# NOTA CRÍTICA: NO ignoramos bd_vectorial. El servidor la necesita para leer los vectores.

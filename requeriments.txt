@@ -1,0 +1,6 @@
+Flask==3.0.2
+flask-cors==4.0.0
+firebase-admin==6.4.0
+google-generativeai==0.4.1
+chromadb==0.4.24
+gunicorn==21.2.0
