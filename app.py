@@ -9,23 +9,20 @@ import google.generativeai as genai
 app = Flask(__name__)
 CORS(app)
 
-# --- CONFIGURACIÓN DE FIREBASE PARA LA NUBE ---
+
 credenciales_firebase = os.environ.get("FIREBASE_JSON")
 if credenciales_firebase:
-    # Si estamos en Render, lee el JSON desde la variable de entorno
+
     cred_dict = json.loads(credenciales_firebase)
     cred = credentials.Certificate(cred_dict)
     initialize_app(cred)
 else:
-    # Si estamos en local, asume la configuración por defecto
+  
     initialize_app()
 
-# --- CONFIGURACIÓN DE GEMINI ---
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-modelo = genai.GenerativeModel('gemini-1.5-flash')
+modelo = genai.GenerativeModel('gemini-3.5-flash')
 
-# --- CONFIGURACIÓN DE LA BASE DE DATOS VECTORIAL ---
-# Es vital que la carpeta bd_vectorial suba al servidor junto con el código
 cliente_chroma = chromadb.PersistentClient(path="./bd_vectorial")
 coleccion = cliente_chroma.get_collection(name="manual_mantenimiento")
 
