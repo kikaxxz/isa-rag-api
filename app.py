@@ -5,6 +5,8 @@ import os
 import json
 from pinecone import Pinecone
 from google import genai
+from google.genai import types, errors
+from groq import Groq
 
 app = Flask(__name__)
 CORS(app)
@@ -20,6 +22,7 @@ else:
 cliente_gemini = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
+cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
@@ -35,61 +38,81 @@ def consultar_manual():
     data = request.get_json()
     pregunta = data.get('pregunta')
 
-    prompt_enrutador = f"""
-    Clasifica la siguiente pregunta en una de dos categorías:
-    1. 'GENERAL': Saludos, preguntas sobre qué puedes hacer, o preguntas abstractas.
-    2. 'TECNICA': Búsqueda de datos, procedimientos, equipos o pasos de mantenimiento.
-    
-    Responde ÚNICAMENTE con la palabra GENERAL o TECNICA.
-    Pregunta: "{pregunta}"
-    """
-
-    respuesta_ruta = cliente_gemini.models.generate_content(
-        model='gemini-3.5-flash',
-        contents=prompt_enrutador
-    ).text.strip().upper()
-
-    if "GENERAL" in respuesta_ruta:
-        prompt_final = f"""
-        Eres un asistente virtual experto en Automatización y Control.
-        Responde de manera profesional a esta pregunta general. Indica que estás diseñado para consultar manuales técnicos y que puedes ayudar con procedimientos, verificación de fugas, calibraciones y repuestos de instrumentación.
-        Pregunta del usuario: {pregunta}
+    try:
+        prompt_enrutador = f"""
+        Clasifica la siguiente pregunta en una de dos categorías:
+        1. 'GENERAL': Saludos, preguntas sobre qué puedes hacer, o abstractas.
+        2. 'TECNICA': Búsqueda de datos, procedimientos, equipos o mantenimiento.
+        
+        Responde ÚNICAMENTE con la palabra GENERAL o TECNICA.
+        Pregunta: "{pregunta}"
         """
-        
-        respuesta_final = cliente_gemini.models.generate_content(
+
+        respuesta_ruta = cliente_gemini.models.generate_content(
             model='gemini-3.5-flash',
-            contents=prompt_final
-        ).text
-    else:
-        embedding_pregunta = cliente_gemini.models.embed_content(
-            model='text-embedding-004',
-            contents=pregunta
-        ).embeddings[0].values
+            contents=prompt_enrutador
+        ).text.strip().upper()
 
-        resultados = indice.query(
-            vector=embedding_pregunta,
-            top_k=3,
-            include_metadata=True
-        )
+        if "GENERAL" in respuesta_ruta:
+            prompt_final = f"""
+            Eres un asistente virtual experto en Automatización y Control.
+            Responde de manera profesional a esta pregunta general. Indica que estás diseñado para consultar manuales técnicos y que puedes ayudar con procedimientos, verificación de fugas, calibraciones y repuestos de instrumentación.
+            Pregunta del usuario: {pregunta}
+            """
+            
+            try:
+                respuesta_final = cliente_gemini.models.generate_content(
+                    model='gemini-3.5-flash',
+                    contents=prompt_final
+                ).text
+            except errors.APIError:
+                chat_completion = cliente_groq.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt_final}],
+                    model="llama3-8b-8192",
+                )
+                respuesta_final = chat_completion.choices[0].message.content
 
-        contexto = " ".join([match['metadata']['texto'] for match in resultados['matches']]) if resultados['matches'] else ""
-        
-        prompt_final = f"""
-        Eres un asistente técnico de mantenimiento industrial. 
-        Responde la pregunta usando la información del contexto.
-        
-        REGLA ESTRICTA: Sé conciso y directo. Si estás explicando un procedimiento, resúmelo únicamente en los pasos más críticos utilizando viñetas. No generes respuestas de más de 3 párrafos.
-        
-        Contexto: {contexto}
-        Pregunta: {pregunta}
-        """
-        
-        respuesta_final = cliente_gemini.models.generate_content(
-            model='gemini-3.5-flash',
-            contents=prompt_final
-        ).text
+        else:
+            embedding_pregunta = cliente_gemini.models.embed_content(
+                model='gemini-embedding-001',
+                contents=pregunta,
+                config=types.EmbedContentConfig(output_dimensionality=768)
+            ).embeddings[0].values
 
-    return jsonify({"respuesta": respuesta_final})
+            resultados = indice.query(
+                vector=embedding_pregunta,
+                top_k=3,
+                include_metadata=True
+            )
+
+            contexto = " ".join([match['metadata']['texto'] for match in resultados['matches']]) if resultados['matches'] else ""
+            
+            prompt_final = f"""
+            Eres un asistente técnico de mantenimiento industrial. 
+            Responde la pregunta usando la información del contexto.
+            
+            REGLA ESTRICTA: Sé conciso y directo. Si estás explicando un procedimiento, resúmelo únicamente en los pasos más críticos utilizando viñetas. No generes respuestas de más de 3 párrafos.
+            
+            Contexto: {contexto}
+            Pregunta: {pregunta}
+            """
+            
+            try:
+                respuesta_final = cliente_gemini.models.generate_content(
+                    model='gemini-3.5-flash',
+                    contents=prompt_final
+                ).text
+            except errors.APIError:
+                chat_completion = cliente_groq.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt_final}],
+                    model="llama3-8b-8192",
+                )
+                respuesta_final = chat_completion.choices[0].message.content
+
+        return jsonify({"respuesta": respuesta_final})
+
+    except Exception:
+        return jsonify({"error": "Ocurrió un error inesperado al procesar la consulta."}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
