@@ -4,6 +4,7 @@ from firebase_admin import credentials, auth, initialize_app
 import os
 import json
 import chromadb
+from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
 from google import genai
 
 app = Flask(__name__)
@@ -19,8 +20,24 @@ else:
 
 cliente_gemini = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
+class GeminiEmbeddingFunction(EmbeddingFunction):
+    def __call__(self, input: Documents) -> Embeddings:
+        embeddings = []
+        for texto in input:
+            respuesta = cliente_gemini.models.embed_content(
+                model='text-embedding-004',
+                contents=texto
+            )
+            embeddings.append(respuesta.embeddings[0].values)
+        return embeddings
+
+funcion_gemini = GeminiEmbeddingFunction()
+
 cliente_chroma = chromadb.PersistentClient(path="./bd_vectorial")
-coleccion = cliente_chroma.get_collection(name="manual_mantenimiento")
+coleccion = cliente_chroma.get_collection(
+    name="manual_mantenimiento",
+    embedding_function=funcion_gemini
+)
 
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
@@ -58,8 +75,8 @@ def consultar_manual():
         """
         
         respuesta_final = cliente_gemini.models.generate_content(
-                model='gemini-3.5-flash',
-                contents=prompt_final
+            model='gemini-3.5-flash',
+            contents=prompt_final
         ).text
     else:
         resultados = coleccion.query(
