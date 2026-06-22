@@ -25,6 +25,10 @@ pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
+@app.route('/api/v1/ping', methods=['GET'])
+def ping():
+    return jsonify({"status": "activo"}), 200
+
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
     token = request.headers.get('Authorization')
