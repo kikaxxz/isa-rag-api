@@ -48,10 +48,17 @@ def consultar_manual():
         Pregunta: "{pregunta}"
         """
 
-        respuesta_ruta = cliente_gemini.models.generate_content(
-            model='gemini-3.5-flash',
-            contents=prompt_enrutador
-        ).text.strip().upper()
+        try:
+            respuesta_ruta = cliente_gemini.models.generate_content(
+                model='gemini-3.5-flash',
+                contents=prompt_enrutador
+            ).text.strip().upper()
+        except errors.APIError:
+            chat_completion = cliente_groq.chat.completions.create(
+                messages=[{"role": "user", "content": prompt_enrutador}],
+                model="llama3-8b-8192",
+            )
+            respuesta_ruta = chat_completion.choices[0].message.content.strip().upper()
 
         if "GENERAL" in respuesta_ruta:
             prompt_final = f"""
@@ -111,6 +118,10 @@ def consultar_manual():
 
         return jsonify({"respuesta": respuesta_final})
 
+    except errors.APIError:
+        return jsonify({
+            "error": "El servidor de inteligencia artificial se encuentra temporalmente saturado por alta demanda. Por favor, intenta tu consulta nuevamente en un par de minutos."
+        }), 503
     except Exception:
         return jsonify({"error": "Ocurrió un error inesperado al procesar la consulta."}), 500
 
