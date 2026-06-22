@@ -58,7 +58,7 @@ def consultar_manual():
             traceback.print_exc()
             chat_completion = cliente_groq.chat.completions.create(
                 messages=[{"role": "user", "content": prompt_enrutador}],
-                model="llama3-8b-8192",
+                model="llama-3.1-8b-instant",
             )
             respuesta_ruta = chat_completion.choices[0].message.content.strip().upper()
 
@@ -78,7 +78,7 @@ def consultar_manual():
                 traceback.print_exc()
                 chat_completion = cliente_groq.chat.completions.create(
                     messages=[{"role": "user", "content": prompt_final}],
-                    model="llama3-8b-8192",
+                    model="llama-3.1-8b-instant",
                 )
                 respuesta_final = chat_completion.choices[0].message.content
 
@@ -116,7 +116,7 @@ def consultar_manual():
                 traceback.print_exc()
                 chat_completion = cliente_groq.chat.completions.create(
                     messages=[{"role": "user", "content": prompt_final}],
-                    model="llama3-8b-8192",
+                    model="llama-3.1-8b-instant",
                 )
                 respuesta_final = chat_completion.choices[0].message.content
 
