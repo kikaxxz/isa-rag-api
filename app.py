@@ -5,7 +5,7 @@ import os
 import json
 from pinecone import Pinecone
 from google import genai
-from google.genai import types, errors
+from google.genai import types
 from groq import Groq
 import traceback
 
@@ -42,25 +42,19 @@ def consultar_manual():
     try:
         prompt_enrutador = f"""
         Clasifica la siguiente pregunta en una de dos categorías:
-        1. 'GENERAL': Saludos, preguntas sobre qué puedes hacer, o abstractas.
-        2. 'TECNICA': Búsqueda de datos, procedimientos, equipos o mantenimiento.
+        1. 'GENERAL': Saludos, preguntas abstractas o solicitudes no técnicas.
+        2. 'TECNICA': Búsqueda de datos, procedimientos, equipos, automatización o mantenimiento.
         
         Responde ÚNICAMENTE con la palabra GENERAL o TECNICA.
         Pregunta: "{pregunta}"
         """
 
-        try:
-            respuesta_ruta = cliente_gemini.models.generate_content(
-                model='gemini-3.5-flash',
-                contents=prompt_enrutador
-            ).text.strip().upper()
-        except errors.APIError:
-            traceback.print_exc()
-            chat_completion = cliente_groq.chat.completions.create(
-                messages=[{"role": "user", "content": prompt_enrutador}],
-                model="llama-3.1-8b-instant",
-            )
-            respuesta_ruta = chat_completion.choices[0].message.content.strip().upper()
+        chat_completion_ruta = cliente_groq.chat.completions.create(
+            messages=[{"role": "user", "content": prompt_enrutador}],
+            model="qwen-3.6-27b",
+            temperature=0.1
+        )
+        respuesta_ruta = chat_completion_ruta.choices[0].message.content.strip().upper()
 
         if "GENERAL" in respuesta_ruta:
             prompt_final = f"""
@@ -69,18 +63,12 @@ def consultar_manual():
             Pregunta del usuario: {pregunta}
             """
             
-            try:
-                respuesta_final = cliente_gemini.models.generate_content(
-                    model='gemini-3.5-flash',
-                    contents=prompt_final
-                ).text
-            except errors.APIError:
-                traceback.print_exc()
-                chat_completion = cliente_groq.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt_final}],
-                    model="llama-3.1-8b-instant",
-                )
-                respuesta_final = chat_completion.choices[0].message.content
+            chat_completion = cliente_groq.chat.completions.create(
+                messages=[{"role": "user", "content": prompt_final}],
+                model="qwen-3.6-27b",
+                temperature=0.3
+            )
+            respuesta_final = chat_completion.choices[0].message.content
 
         else:
             embedding_pregunta = cliente_gemini.models.embed_content(
@@ -107,18 +95,12 @@ def consultar_manual():
             Pregunta: {pregunta}
             """
             
-            try:
-                respuesta_final = cliente_gemini.models.generate_content(
-                    model='gemini-3.5-flash',
-                    contents=prompt_final
-                ).text
-            except errors.APIError:
-                traceback.print_exc()
-                chat_completion = cliente_groq.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt_final}],
-                    model="llama-3.1-8b-instant",
-                )
-                respuesta_final = chat_completion.choices[0].message.content
+            chat_completion = cliente_groq.chat.completions.create(
+                messages=[{"role": "user", "content": prompt_final}],
+                model="qwen-3.6-27b",
+                temperature=0.2
+            )
+            respuesta_final = chat_completion.choices[0].message.content
 
         return jsonify({"respuesta": respuesta_final})
 
