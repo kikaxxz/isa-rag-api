@@ -3,8 +3,7 @@ from flask_cors import CORS
 from firebase_admin import credentials, auth, initialize_app
 import os
 import json
-import chromadb
-from chromadb.api.types import Documents, EmbeddingFunction, Embeddings
+from pinecone import Pinecone
 from google import genai
 
 app = Flask(__name__)
@@ -19,25 +18,8 @@ else:
     initialize_app()
 
 cliente_gemini = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
-
-class GeminiEmbeddingFunction(EmbeddingFunction):
-    def __call__(self, input: Documents) -> Embeddings:
-        embeddings = []
-        for texto in input:
-            respuesta = cliente_gemini.models.embed_content(
-                model='text-embedding-004',
-                contents=texto
-            )
-            embeddings.append(respuesta.embeddings[0].values)
-        return embeddings
-
-funcion_gemini = GeminiEmbeddingFunction()
-
-cliente_chroma = chromadb.PersistentClient(path="./bd_vectorial")
-coleccion = cliente_chroma.get_collection(
-    name="manual_mantenimiento",
-    embedding_function=funcion_gemini
-)
+pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
+indice = pc.Index("manual-mantenimiento")
 
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
@@ -79,12 +61,18 @@ def consultar_manual():
             contents=prompt_final
         ).text
     else:
-        resultados = coleccion.query(
-            query_texts=[pregunta],
-            n_results=3
+        embedding_pregunta = cliente_gemini.models.embed_content(
+            model='text-embedding-004',
+            contents=pregunta
+        ).embeddings[0].values
+
+        resultados = indice.query(
+            vector=embedding_pregunta,
+            top_k=3,
+            include_metadata=True
         )
 
-        contexto = " ".join(resultados['documents'][0]) if resultados['documents'] else ""
+        contexto = " ".join([match['metadata']['texto'] for match in resultados['matches']]) if resultados['matches'] else ""
         
         prompt_final = f"""
         Eres un asistente técnico de mantenimiento industrial. 
