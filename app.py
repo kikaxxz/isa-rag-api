@@ -72,7 +72,8 @@ def consultar_manual():
         prompt_final = f"""
         Eres un asistente técnico de mantenimiento industrial. 
         Responde la pregunta usando la información del contexto.
-        Si la información no está en el contexto, pero aplica por buenas prácticas de ingeniería de automatización, indícalo diciendo: "El manual no lo especifica de forma directa, pero por buenas prácticas generales..."
+        
+        REGLA ESTRICTA: Sé conciso y directo. Si estás explicando un procedimiento, resúmelo únicamente en los pasos más críticos utilizando viñetas. No generes respuestas de más de 3 párrafos.
         
         Contexto: {contexto}
         Pregunta: {pregunta}
