@@ -51,7 +51,7 @@ def consultar_manual():
 
         chat_completion_ruta = cliente_groq.chat.completions.create(
             messages=[{"role": "user", "content": prompt_enrutador}],
-            model="qwen-3.6-27b",
+            model="llama-3.1-8b-instant",
             temperature=0.1
         )
         respuesta_ruta = chat_completion_ruta.choices[0].message.content.strip().upper()
@@ -65,7 +65,7 @@ def consultar_manual():
             
             chat_completion = cliente_groq.chat.completions.create(
                 messages=[{"role": "user", "content": prompt_final}],
-                model="qwen-3.6-27b",
+                model="llama-3.1-8b-instant",
                 temperature=0.3
             )
             respuesta_final = chat_completion.choices[0].message.content
@@ -97,7 +97,7 @@ def consultar_manual():
             
             chat_completion = cliente_groq.chat.completions.create(
                 messages=[{"role": "user", "content": prompt_final}],
-                model="qwen-3.6-27b",
+                model="llama-3.1-8b-instant",
                 temperature=0.2
             )
             respuesta_final = chat_completion.choices[0].message.content
