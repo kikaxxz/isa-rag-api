@@ -4,24 +4,20 @@ from firebase_admin import credentials, auth, initialize_app
 import os
 import json
 import chromadb
-import google.generativeai as genai
+from google import genai
 
 app = Flask(__name__)
 CORS(app)
 
-
 credenciales_firebase = os.environ.get("FIREBASE_JSON")
 if credenciales_firebase:
-
     cred_dict = json.loads(credenciales_firebase)
     cred = credentials.Certificate(cred_dict)
     initialize_app(cred)
 else:
-  
     initialize_app()
 
-genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-modelo = genai.GenerativeModel('gemini-3.5-flash')
+cliente_gemini = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
 cliente_chroma = chromadb.PersistentClient(path="./bd_vectorial")
 coleccion = cliente_chroma.get_collection(name="manual_mantenimiento")
@@ -40,31 +36,54 @@ def consultar_manual():
     data = request.get_json()
     pregunta = data.get('pregunta')
 
-    resultados = coleccion.query(
-        query_texts=[pregunta],
-        n_results=3
-    )
-
-    contexto = " ".join(resultados['documents'][0])
+    prompt_enrutador = f"""
+    Clasifica la siguiente pregunta en una de dos categorías:
+    1. 'GENERAL': Saludos, preguntas sobre qué puedes hacer, o preguntas abstractas.
+    2. 'TECNICA': Búsqueda de datos, procedimientos, equipos o pasos de mantenimiento.
     
-    prompt = f"""
-    Eres un asistente técnico de mantenimiento industrial. 
-    Responde la siguiente pregunta usando SOLAMENTE la información en este contexto.
-    Si no está en el contexto, indica que no tienes la información.
-    
-    Contexto:
-    {contexto}
-    
-    Pregunta:
-    {pregunta}
+    Responde ÚNICAMENTE con la palabra GENERAL o TECNICA.
+    Pregunta: "{pregunta}"
     """
 
-    respuesta_gemini = modelo.generate_content(prompt)
-    
-    return jsonify({
-        "respuesta": respuesta_gemini.text,
-        "pagina": 1
-    }), 200
+    respuesta_ruta = cliente_gemini.models.generate_content(
+        model='gemini-3.5-flash',
+        contents=prompt_enrutador
+    ).text.strip().upper()
+
+    if "GENERAL" in respuesta_ruta:
+        prompt_final = f"""
+        Eres un asistente virtual experto en Automatización y Control.
+        Responde de manera profesional a esta pregunta general. Indica que estás diseñado para consultar manuales técnicos y que puedes ayudar con procedimientos, verificación de fugas, calibraciones y repuestos de instrumentación.
+        Pregunta del usuario: {pregunta}
+        """
+        
+        respuesta_final = cliente_gemini.models.generate_content(
+                model='gemini-3.5-flash',
+                contents=prompt_final
+        ).text
+    else:
+        resultados = coleccion.query(
+            query_texts=[pregunta],
+            n_results=3
+        )
+
+        contexto = " ".join(resultados['documents'][0]) if resultados['documents'] else ""
+        
+        prompt_final = f"""
+        Eres un asistente técnico de mantenimiento industrial. 
+        Responde la pregunta usando la información del contexto.
+        Si la información no está en el contexto, pero aplica por buenas prácticas de ingeniería de automatización, indícalo diciendo: "El manual no lo especifica de forma directa, pero por buenas prácticas generales..."
+        
+        Contexto: {contexto}
+        Pregunta: {pregunta}
+        """
+        
+        respuesta_final = cliente_gemini.models.generate_content(
+            model='gemini-3.5-flash',
+            contents=prompt_final
+        ).text
+
+    return jsonify({"respuesta": respuesta_final})
 
 if __name__ == '__main__':
-    app.run(port=int(os.environ.get("PORT", 8080)))
+    app.run(host='0.0.0.0', port=10000)
