@@ -1,4 +1,9 @@
 __pycache__/
+*.pyc
+.env
+*.json
+bd_vectorial/
 manual_mantenimiento.pdf
 procesar_manual.py
-.env
+venv/
+.venv/

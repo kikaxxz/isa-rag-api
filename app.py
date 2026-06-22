@@ -7,6 +7,7 @@ from pinecone import Pinecone
 from google import genai
 from google.genai import types, errors
 from groq import Groq
+import traceback
 
 app = Flask(__name__)
 CORS(app)
@@ -54,6 +55,7 @@ def consultar_manual():
                 contents=prompt_enrutador
             ).text.strip().upper()
         except errors.APIError:
+            traceback.print_exc()
             chat_completion = cliente_groq.chat.completions.create(
                 messages=[{"role": "user", "content": prompt_enrutador}],
                 model="llama3-8b-8192",
@@ -73,6 +75,7 @@ def consultar_manual():
                     contents=prompt_final
                 ).text
             except errors.APIError:
+                traceback.print_exc()
                 chat_completion = cliente_groq.chat.completions.create(
                     messages=[{"role": "user", "content": prompt_final}],
                     model="llama3-8b-8192",
@@ -110,6 +113,7 @@ def consultar_manual():
                     contents=prompt_final
                 ).text
             except errors.APIError:
+                traceback.print_exc()
                 chat_completion = cliente_groq.chat.completions.create(
                     messages=[{"role": "user", "content": prompt_final}],
                     model="llama3-8b-8192",
@@ -118,12 +122,12 @@ def consultar_manual():
 
         return jsonify({"respuesta": respuesta_final})
 
-    except errors.APIError:
+    except Exception as e:
+        traceback.print_exc()
         return jsonify({
-            "error": "El servidor de inteligencia artificial se encuentra temporalmente saturado por alta demanda. Por favor, intenta tu consulta nuevamente en un par de minutos."
-        }), 503
-    except Exception:
-        return jsonify({"error": "Ocurrió un error inesperado al procesar la consulta."}), 500
+            "error": "Ocurrió un error inesperado al procesar la consulta.",
+            "detalle": str(e)
+        }), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
