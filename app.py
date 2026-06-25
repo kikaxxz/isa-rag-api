@@ -4,8 +4,8 @@ from firebase_admin import credentials, auth, initialize_app
 import os
 import json
 import html
+import requests
 from pinecone import Pinecone
-from sentence_transformers import SentenceTransformer
 from groq import Groq
 import traceback
 
@@ -20,7 +20,6 @@ if credenciales_firebase:
 else:
     initialize_app()
 
-modelo_local = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -28,6 +27,17 @@ cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
     return texto_escapado[:500].strip()
+
+def obtener_vector_hf(texto):
+    url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    headers = {}
+    token = os.environ.get("HF_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    
+    respuesta = requests.post(url, headers=headers, json={"inputs": texto})
+    respuesta.raise_for_status()
+    return respuesta.json()
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
@@ -44,7 +54,7 @@ def consultar_manual():
             
         pregunta_limpia = sanitizar_entrada(pregunta)
         
-        vector_busqueda = modelo_local.encode([pregunta_limpia], convert_to_numpy=True).tolist()[0]
+        vector_busqueda = obtener_vector_hf(pregunta_limpia)
         
         resultado_busqueda = indice.query(
             vector=vector_busqueda,
