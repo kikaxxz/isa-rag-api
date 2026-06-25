@@ -5,6 +5,7 @@ import os
 import json
 import html
 import requests
+import time
 from pinecone import Pinecone
 from groq import Groq
 import traceback
@@ -35,9 +36,38 @@ def obtener_vector_hf(texto):
     if token:
         headers["Authorization"] = f"Bearer {token}"
     
-    respuesta = requests.post(url, headers=headers, json={"inputs": texto})
-    respuesta.raise_for_status()
-    return respuesta.json()
+    # Sistema de reintentos para evadir fallos de DNS en Render y Cold Starts en Hugging Face
+    for intento in range(5):
+        try:
+            # Añadimos un timeout para evitar que la petición se quede colgada
+            respuesta = requests.post(url, headers=headers, json={"inputs": texto}, timeout=20)
+            
+            # Si Hugging Face está cargando el modelo, devuelve 503 con el tiempo estimado
+            if respuesta.status_code == 503:
+                datos_error = respuesta.json()
+                tiempo_espera = datos_error.get("estimated_time", 10.0)
+                print(f"Modelo cargando en Hugging Face. Esperando {tiempo_espera} segundos...")
+                time.sleep(tiempo_espera)
+                continue
+                
+            respuesta.raise_for_status()
+            
+            resultado = respuesta.json()
+            if isinstance(resultado, dict) and "error" in resultado:
+                raise Exception(f"Error devuelto por Hugging Face: {resultado['error']}")
+                
+            return resultado
+            
+        except requests.exceptions.ConnectionError as e:
+            print(f"Fallo de DNS o red en Render (Intento {intento + 1}/5). Reintentando en 3s...")
+            time.sleep(3)
+        except Exception as e:
+            if intento == 4:
+                raise e
+            print(f"Error inesperado (Intento {intento + 1}/5). Reintentando en 3s... Detalle: {e}")
+            time.sleep(3)
+            
+    raise Exception("No se pudo obtener el vector de Hugging Face después de 5 intentos.")
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
