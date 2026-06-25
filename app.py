@@ -5,8 +5,7 @@ import os
 import json
 import html
 from pinecone import Pinecone
-from google import genai
-from google.genai import types
+from sentence_transformers import SentenceTransformer
 from groq import Groq
 import traceback
 
@@ -21,7 +20,7 @@ if credenciales_firebase:
 else:
     initialize_app()
 
-cliente_gemini = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+modelo_local = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -45,12 +44,7 @@ def consultar_manual():
             
         pregunta_limpia = sanitizar_entrada(pregunta)
         
-        respuesta_embed = cliente_gemini.models.embed_content(
-            model='gemini-embedding-001',
-            contents=pregunta_limpia,
-            config=types.EmbedContentConfig(output_dimensionality=768)
-        )
-        vector_busqueda = respuesta_embed.embeddings[0].values
+        vector_busqueda = modelo_local.encode([pregunta_limpia], convert_to_numpy=True).tolist()[0]
         
         resultado_busqueda = indice.query(
             vector=vector_busqueda,
