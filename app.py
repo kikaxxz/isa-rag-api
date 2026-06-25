@@ -29,45 +29,57 @@ def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
     return texto_escapado[:500].strip()
 
+def verificar_token_firebase():
+    token_header = request.headers.get('Authorization')
+    if not token_header:
+        return None
+    
+    try:
+        token = token_header.split("Bearer ")[-1] if "Bearer " in token_header else token_header
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception:
+        return None
+
 def obtener_vector_hf(texto):
     url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     headers = {}
     token = os.environ.get("HF_TOKEN")
+    
     if token:
         headers["Authorization"] = f"Bearer {token}"
     
-    # Sistema de reintentos para evadir fallos de DNS en Render y Cold Starts en Hugging Face
     for intento in range(5):
         try:
-            # Añadimos un timeout para evitar que la petición se quede colgada
             respuesta = requests.post(url, headers=headers, json={"inputs": texto}, timeout=20)
             
-            # Si Hugging Face está cargando el modelo, devuelve 503 con el tiempo estimado
             if respuesta.status_code == 503:
                 datos_error = respuesta.json()
                 tiempo_espera = datos_error.get("estimated_time", 10.0)
-                print(f"Modelo cargando en Hugging Face. Esperando {tiempo_espera} segundos...")
                 time.sleep(tiempo_espera)
                 continue
                 
+            if respuesta.status_code in [400, 401, 403, 404]:
+                raise Exception(f"HTTP_{respuesta.status_code}: {respuesta.text}")
+                
             respuesta.raise_for_status()
-            
             resultado = respuesta.json()
+            
             if isinstance(resultado, dict) and "error" in resultado:
-                raise Exception(f"Error devuelto por Hugging Face: {resultado['error']}")
+                raise Exception(f"HF_ERROR: {resultado['error']}")
                 
             return resultado
             
-        except requests.exceptions.ConnectionError as e:
-            print(f"Fallo de DNS o red en Render (Intento {intento + 1}/5). Reintentando en 3s...")
+        except requests.exceptions.ConnectionError:
             time.sleep(3)
         except Exception as e:
+            if "HTTP_" in str(e) or "HF_ERROR" in str(e):
+                raise e
             if intento == 4:
                 raise e
-            print(f"Error inesperado (Intento {intento + 1}/5). Reintentando en 3s... Detalle: {e}")
             time.sleep(3)
             
-    raise Exception("No se pudo obtener el vector de Hugging Face después de 5 intentos.")
+    raise Exception("Fallo critico tras 5 reintentos")
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
@@ -75,6 +87,10 @@ def ping():
 
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
+    usuario_verificado = verificar_token_firebase()
+    if not usuario_verificado:
+        return jsonify({"error": "No autorizado. Token inválido o ausente."}), 401
+
     try:
         datos = request.json
         pregunta = datos.get("pregunta", "")
