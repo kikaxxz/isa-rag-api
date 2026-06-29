@@ -7,9 +7,6 @@ import html
 import traceback
 from pinecone import Pinecone
 from groq import Groq
-from fastembed import TextEmbedding
-
-os.environ["FASTEMBED_CACHE_PATH"] = "/tmp/fastembed_cache"
 
 app = Flask(__name__)
 CORS(app)
@@ -26,8 +23,6 @@ pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-modelo_embedding = None
-
 def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
     return texto_escapado[:500].strip()
@@ -43,20 +38,6 @@ def verificar_token_firebase():
         return decoded_token
     except Exception:
         return None
-
-def obtener_vector_local(texto):
-    global modelo_embedding
-    try:
-        if modelo_embedding is None:
-            modelo_embedding = TextEmbedding(
-                model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
-                threads=1
-            )
-        generador = modelo_embedding.embed([texto])
-        vector = list(generador)[0].tolist()
-        return vector
-    except Exception as e:
-        raise Exception(str(e))
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
@@ -77,7 +58,13 @@ def consultar_manual():
             
         pregunta_limpia = sanitizar_entrada(pregunta)
         
-        vector_busqueda = obtener_vector_local(pregunta_limpia)
+        respuesta_embedding = pc.inference.embed(
+            model="multilingual-e5-large",
+            inputs=[pregunta_limpia],
+            parameters={"input_type": "query"}
+        )
+        
+        vector_busqueda = respuesta_embedding[0].values
         
         resultado_busqueda = indice.query(
             vector=vector_busqueda,
