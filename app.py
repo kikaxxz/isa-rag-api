@@ -4,13 +4,12 @@ from firebase_admin import credentials, auth, initialize_app
 import os
 import json
 import html
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-import time
+import traceback
 from pinecone import Pinecone
 from groq import Groq
-import traceback
+from fastembed import TextEmbedding
+
+os.environ["FASTEMBED_CACHE_PATH"] = "/tmp/fastembed_cache"
 
 app = Flask(__name__)
 CORS(app)
@@ -27,20 +26,7 @@ pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-def crear_sesion_robusta():
-    session = requests.Session()
-    reintentos = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=[500, 502, 503, 504],
-        allowed_methods=["POST"]
-    )
-    adapter = HTTPAdapter(max_retries=reintentos)
-    session.mount('http://', adapter)
-    session.mount('https://', adapter)
-    return session
-
-sesion_hf = crear_sesion_robusta()
+modelo_embedding = TextEmbedding(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
 
 def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
@@ -58,45 +44,17 @@ def verificar_token_firebase():
     except Exception:
         return None
 
-def obtener_vector_hf(texto):
-    url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    headers = {"Authorization": f"Bearer {os.environ.get('HF_TOKEN')}"}
-    
+def obtener_vector_local(texto):
     try:
-        respuesta = sesion_hf.post(url, headers=headers, json={"inputs": texto}, timeout=15)
-        
-        if respuesta.status_code == 503:
-            tiempo_espera = respuesta.json().get("estimated_time", 10.0)
-            time.sleep(tiempo_espera)
-            respuesta = sesion_hf.post(url, headers=headers, json={"inputs": texto}, timeout=15)
-            
-        respuesta.raise_for_status()
-        return respuesta.json()
-        
-    except requests.exceptions.RequestException as e:
+        generador = modelo_embedding.embed([texto])
+        vector = list(generador)[0].tolist()
+        return vector
+    except Exception as e:
         raise Exception(str(e))
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
     return jsonify({"status": "activo"}), 200
-
-@app.route('/api/v1/debug-dns', methods=['GET'])
-def debug_dns():
-    import socket
-    try:
-        ip_hf = socket.gethostbyname('api-inference.huggingface.co')
-        respuesta = requests.get('https://huggingface.co/api/status', timeout=5)
-        
-        return jsonify({
-            "resolucion_dns": ip_hf,
-            "conexion_http": respuesta.status_code
-        }), 200
-    except Exception as e:
-        import traceback
-        return jsonify({
-            "error_conexion": str(e),
-            "traza": traceback.format_exc()
-        }), 500
 
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
@@ -113,7 +71,7 @@ def consultar_manual():
             
         pregunta_limpia = sanitizar_entrada(pregunta)
         
-        vector_busqueda = obtener_vector_hf(pregunta_limpia)
+        vector_busqueda = obtener_vector_local(pregunta_limpia)
         
         resultado_busqueda = indice.query(
             vector=vector_busqueda,
