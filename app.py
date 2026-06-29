@@ -4,11 +4,10 @@ from firebase_admin import credentials, auth, initialize_app
 import os
 import json
 import html
-import requests
-import time
 from pinecone import Pinecone
 from groq import Groq
 import traceback
+from sentence_transformers import SentenceTransformer
 
 app = Flask(__name__)
 CORS(app)
@@ -24,6 +23,8 @@ else:
 pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+
+modelo_local = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
@@ -41,49 +42,9 @@ def verificar_token_firebase():
     except Exception:
         return None
 
-def obtener_vector_hf(texto):
-    url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-    headers = {}
-    token = os.environ.get("HF_TOKEN")
-    
-    if token:
-        headers["Authorization"] = f"Bearer {token}"
-        
-    ultimo_error = None
-    
-    for intento in range(5):
-        try:
-            respuesta = requests.post(url, headers=headers, json={"inputs": texto}, timeout=20)
-            
-            if respuesta.status_code == 503:
-                datos_error = respuesta.json()
-                tiempo_espera = datos_error.get("estimated_time", 10.0)
-                time.sleep(tiempo_espera)
-                continue
-                
-            if respuesta.status_code in [400, 401, 403, 404]:
-                raise Exception(f"HTTP_{respuesta.status_code}: {respuesta.text}")
-                
-            respuesta.raise_for_status()
-            resultado = respuesta.json()
-            
-            if isinstance(resultado, dict) and "error" in resultado:
-                raise Exception(f"HF_ERROR: {resultado['error']}")
-                
-            return resultado
-            
-        except requests.exceptions.ConnectionError as e:
-            ultimo_error = e
-            time.sleep(3)
-        except Exception as e:
-            ultimo_error = e
-            if "HTTP_" in str(e) or "HF_ERROR" in str(e):
-                raise e
-            if intento == 4:
-                raise Exception(f"Fallo critico tras 5 reintentos. Detalle: {str(ultimo_error)}")
-            time.sleep(3)
-            
-    raise Exception(f"Fallo critico tras 5 reintentos. Detalle: {str(ultimo_error)}")
+def obtener_vector(texto):
+    vector = modelo_local.encode(texto)
+    return vector.tolist()
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
@@ -104,7 +65,7 @@ def consultar_manual():
             
         pregunta_limpia = sanitizar_entrada(pregunta)
         
-        vector_busqueda = obtener_vector_hf(pregunta_limpia)
+        vector_busqueda = obtener_vector(pregunta_limpia)
         
         resultado_busqueda = indice.query(
             vector=vector_busqueda,

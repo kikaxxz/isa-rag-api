@@ -9,3 +9,4 @@ pymupdf4llm
 langchain-text-splitters
 python-dotenv
 requests
+sentence-transformers
