@@ -48,6 +48,8 @@ def obtener_vector_hf(texto):
     
     if token:
         headers["Authorization"] = f"Bearer {token}"
+        
+    ultimo_error = None
     
     for intento in range(5):
         try:
@@ -70,16 +72,18 @@ def obtener_vector_hf(texto):
                 
             return resultado
             
-        except requests.exceptions.ConnectionError:
+        except requests.exceptions.ConnectionError as e:
+            ultimo_error = e
             time.sleep(3)
         except Exception as e:
+            ultimo_error = e
             if "HTTP_" in str(e) or "HF_ERROR" in str(e):
                 raise e
             if intento == 4:
-                raise e
+                raise Exception(f"Fallo critico tras 5 reintentos. Detalle: {str(ultimo_error)}")
             time.sleep(3)
             
-    raise Exception("Fallo critico tras 5 reintentos")
+    raise Exception(f"Fallo critico tras 5 reintentos. Detalle: {str(ultimo_error)}")
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
