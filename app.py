@@ -4,10 +4,13 @@ from firebase_admin import credentials, auth, initialize_app
 import os
 import json
 import html
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import time
 from pinecone import Pinecone
 from groq import Groq
 import traceback
-from sentence_transformers import SentenceTransformer
 
 app = Flask(__name__)
 CORS(app)
@@ -24,7 +27,20 @@ pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-modelo_local = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+def crear_sesion_robusta():
+    session = requests.Session()
+    reintentos = Retry(
+        total=5,
+        backoff_factor=1,
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["POST"]
+    )
+    adapter = HTTPAdapter(max_retries=reintentos)
+    session.mount('http://', adapter)
+    session.mount('https://', adapter)
+    return session
+
+sesion_hf = crear_sesion_robusta()
 
 def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
@@ -42,9 +58,23 @@ def verificar_token_firebase():
     except Exception:
         return None
 
-def obtener_vector(texto):
-    vector = modelo_local.encode(texto)
-    return vector.tolist()
+def obtener_vector_hf(texto):
+    url = "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    headers = {"Authorization": f"Bearer {os.environ.get('HF_TOKEN')}"}
+    
+    try:
+        respuesta = sesion_hf.post(url, headers=headers, json={"inputs": texto}, timeout=15)
+        
+        if respuesta.status_code == 503:
+            tiempo_espera = respuesta.json().get("estimated_time", 10.0)
+            time.sleep(tiempo_espera)
+            respuesta = sesion_hf.post(url, headers=headers, json={"inputs": texto}, timeout=15)
+            
+        respuesta.raise_for_status()
+        return respuesta.json()
+        
+    except requests.exceptions.RequestException as e:
+        raise Exception(str(e))
 
 @app.route('/api/v1/ping', methods=['GET'])
 def ping():
@@ -65,7 +95,7 @@ def consultar_manual():
             
         pregunta_limpia = sanitizar_entrada(pregunta)
         
-        vector_busqueda = obtener_vector(pregunta_limpia)
+        vector_busqueda = obtener_vector_hf(pregunta_limpia)
         
         resultado_busqueda = indice.query(
             vector=vector_busqueda,
