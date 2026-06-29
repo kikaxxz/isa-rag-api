@@ -80,6 +80,24 @@ def obtener_vector_hf(texto):
 def ping():
     return jsonify({"status": "activo"}), 200
 
+@app.route('/api/v1/debug-dns', methods=['GET'])
+def debug_dns():
+    import socket
+    try:
+        ip_hf = socket.gethostbyname('api-inference.huggingface.co')
+        respuesta = requests.get('https://huggingface.co/api/status', timeout=5)
+        
+        return jsonify({
+            "resolucion_dns": ip_hf,
+            "conexion_http": respuesta.status_code
+        }), 200
+    except Exception as e:
+        import traceback
+        return jsonify({
+            "error_conexion": str(e),
+            "traza": traceback.format_exc()
+        }), 500
+
 @app.route('/api/v1/consultar-manual', methods=['POST'])
 def consultar_manual():
     usuario_verificado = verificar_token_firebase()
