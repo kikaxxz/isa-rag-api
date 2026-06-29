@@ -9,3 +9,4 @@ venv/
 .venv/
 assets/
 probar_api.py
+prueba_pinecone.py
