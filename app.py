@@ -26,7 +26,7 @@ pc = Pinecone(api_key=os.environ.get("PINECONE_API_KEY"))
 indice = pc.Index("manual-mantenimiento")
 cliente_groq = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
-modelo_embedding = TextEmbedding(model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+modelo_embedding = None
 
 def sanitizar_entrada(texto):
     texto_escapado = html.escape(texto)
@@ -45,7 +45,13 @@ def verificar_token_firebase():
         return None
 
 def obtener_vector_local(texto):
+    global modelo_embedding
     try:
+        if modelo_embedding is None:
+            modelo_embedding = TextEmbedding(
+                model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+                threads=1
+            )
         generador = modelo_embedding.embed([texto])
         vector = list(generador)[0].tolist()
         return vector
